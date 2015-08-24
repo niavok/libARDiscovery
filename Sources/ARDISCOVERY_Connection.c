@@ -31,6 +31,8 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #include <libARSAL/ARSAL_Print.h>
 #include <libARSAL/ARSAL_Socket.h>
@@ -46,6 +48,28 @@
 #define ARDISCOVERY_RECONNECTION_TIME_SEC       1
 
 #define ARDISCOVERY_RECONNECTION_NB_RETRY_MAX   10
+
+static void pair(int fds[2])
+{
+    struct sockaddr_in inaddr;
+    struct sockaddr addr;
+    SOCKET lst=socket(AF_INET, SOCK_STREAM,IPPROTO_TCP);
+    memset(&inaddr, 0, sizeof(inaddr));
+    memset(&addr, 0, sizeof(addr));
+    inaddr.sin_family = AF_INET;
+    inaddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    inaddr.sin_port = 0;
+    int yes=1;
+    setsockopt(lst,SOL_SOCKET,SO_REUSEADDR,(char*)&yes,sizeof(yes));
+    bind(lst,(struct sockaddr *)&inaddr,sizeof(inaddr));
+    listen(lst,1);
+    int len=sizeof(inaddr);
+    getsockname(lst, &addr,&len);
+    fds[0]=socket(AF_INET, SOCK_STREAM,0);
+    connect(fds[0],&addr,len);
+    fds[1]=accept(lst,0,0);
+    closesocket(lst);
+}
 
 /*************************
  * Private header
@@ -194,10 +218,14 @@ ARDISCOVERY_Connection_ConnectionData_t* ARDISCOVERY_Connection_New (ARDISCOVERY
     /* initialize the abortPipe */
     if (localError == ARDISCOVERY_OK)
     {
+#ifdef WIN32
+        pair(connectionData->abortPipe);
+#else
         if (pipe(connectionData->abortPipe) != 0)
         {
             localError = ARDISCOVERY_ERROR_PIPE_INIT;
         }
+#endif
     }
     
     /* Delete connection data if an error occurred */
@@ -561,10 +589,8 @@ static eARDISCOVERY_ERROR ARDISCOVERY_Connection_ControllerInitSocket (ARDISCOVE
         connectionData->address.sin_addr.s_addr = inet_addr (ip);   
         connectionData->address.sin_family = AF_INET;
         connectionData->address.sin_port = htons (port);
+
         
-        /* set the socket non blocking */
-        flags = fcntl(connectionData->socket, F_GETFL, 0);
-        fcntl(connectionData->socket, F_SETFL, flags | O_NONBLOCK);
         
         ARSAL_PRINT(ARSAL_PRINT_DEBUG, ARDISCOVERY_CONNECTION_TAG, "contoller try to connect ip:%s port:%d", ip, port);
         
@@ -581,7 +607,19 @@ static eARDISCOVERY_ERROR ARDISCOVERY_Connection_ControllerInitSocket (ARDISCOVE
             nbTryToConnect++;
         }
         while ((nbTryToConnect <= ARDISCOVERY_RECONNECTION_NB_RETRY_MAX) && (error == ARDISCOVERY_ERROR_SOCKET_UNREACHABLE));
-            
+
+        /* set the socket non blocking */
+#ifdef WIN32
+        unsigned long on = 1;
+        if (0 != ioctlsocket(connectionData->socket, FIONBIO, &on))
+        {
+            /* Handle failure. */
+        }
+#else
+        flags = fcntl(connectionData->socket, F_GETFL, 0);
+        fcntl(connectionData->socket, F_SETFL, flags | O_NONBLOCK);
+#endif
+
         /*connectError = ARSAL_Socket_Connect (connectionData->socket, (struct sockaddr*) &(connectionData->address), sizeof (connectionData->address));
         
         if (connectError != 0)
@@ -628,10 +666,18 @@ static eARDISCOVERY_ERROR ARDISCOVERY_Connection_ControllerInitSocket (ARDISCOVE
                 ARSAL_PRINT(ARSAL_PRINT_ERROR, ARDISCOVERY_CONNECTION_TAG, "connect() failed: %d %s", errno, strerror(errno));
             }
         }*/
-        
-        /* set the socket non blocking */
+
+        /* set the socket blocking */
+#ifdef WIN32
+        on = 0;
+        if (0 != ioctlsocket(connectionData->socket, FIONBIO, &on))
+        {
+            /* Handle failure. */
+        }
+#else
         flags = fcntl(connectionData->socket, F_GETFL, 0);
         fcntl(connectionData->socket, F_SETFL, flags & (~O_NONBLOCK));
+#endif
         
         /* Initialize set */
         FD_ZERO(&readSet);
