@@ -54,7 +54,7 @@
  *************************/
 
 // Bebop
-#define BEBOP_DEVICE_TO_CONTROLLER_PORT 43210
+static int BEBOP_DEVICE_TO_CONTROLLER_PORT = 43210;
 
 #define BEBOP_CONTROLLER_TO_DEVICE_NONACK_ID 10
 #define BEBOP_CONTROLLER_TO_DEVICE_ACK_ID 11
@@ -111,7 +111,7 @@ eARDISCOVERY_ERROR ARDISCOVERY_DEVICE_Wifi_CreateSpecificParameters (ARDISCOVERY
             specificWifiParam->jsonCallbacksCustomData = NULL;
             
             // Parameters sended by discovery Json :
-            specificWifiParam->deviceToControllerPort = BEBOP_DEVICE_TO_CONTROLLER_PORT;
+            specificWifiParam->deviceToControllerPort = BEBOP_DEVICE_TO_CONTROLLER_PORT++;
 
             // Parameters received by discovery Json :
             specificWifiParam->controllerToDevicePort = -1;
